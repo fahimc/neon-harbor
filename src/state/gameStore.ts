@@ -26,7 +26,7 @@ interface GameState {
   resetSave: () => void
 }
 
-const initialMotion: PlayerMotion = { position: { x: -70, y: 0, z: 20 }, velocity: { x: 0, y: 0, z: 0 }, heading: Math.PI, grounded: true, mode: 'foot' }
+const initialMotion: PlayerMotion = { position: { x: -70, y: 0, z: 20 }, velocity: { x: 0, y: 0, z: 0 }, heading: Math.PI, grounded: true, mode: 'foot', vehicle: { gear: 'P', damage: 0, handbrake: false, headlights: false, horn: false, lastImpact: 0 } }
 const initialSettings: GameSettings = { quality: 'medium', music: true, sfx: true, vibration: true, sensitivity: .55, viewDistance: 2 }
 
 export const useGameStore = create<GameState>((set) => ({

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Car, Footprints, Gauge, LogOut, MoveDown, MoveUp } from 'lucide-react'
+import { Car, Footprints, Gauge, Hand, Lightbulb, LogOut, MoveDown, MoveUp, Volume2 } from 'lucide-react'
 import { useGameStore } from '../state/gameStore'
 import { inputState } from './input'
 
@@ -40,12 +40,20 @@ export function TouchControls() {
   }
   const pressPedal = (z: number) => { pedalActive.current = true; syncTouchActive(); inputState.z = z; inputState.sprint = true }
   const releasePedal = () => { pedalActive.current = false; inputState.z = 0; inputState.sprint = false; syncTouchActive() }
-  const exitVehicle = () => { steeringActive.current = false; pedalActive.current = false; inputState.touchActive = false; inputState.x = 0; inputState.z = 0; inputState.sprint = false; toggleVehicle() }
+  const pressHandbrake = () => { pedalActive.current = true; syncTouchActive(); inputState.handbrake = true }
+  const releaseHandbrake = () => { pedalActive.current = false; inputState.handbrake = false; syncTouchActive() }
+  const pressHorn = () => { pedalActive.current = true; syncTouchActive(); inputState.horn = true }
+  const releaseHorn = () => { pedalActive.current = false; inputState.horn = false; syncTouchActive() }
+  const toggleLights = () => { inputState.headlights = !inputState.headlights }
+  const exitVehicle = () => { steeringActive.current = false; pedalActive.current = false; inputState.touchActive = false; inputState.x = 0; inputState.z = 0; inputState.sprint = false; inputState.handbrake = false; inputState.horn = false; toggleVehicle() }
 
   return <div className={`touch-controls ${isDriving ? 'touch-controls--car' : ''}`}>
     <div className={`joystick ${isDriving ? 'joystick--steer' : ''}`} aria-label={isDriving ? 'Steer vehicle' : 'Move'} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end}><span style={{ transform: `translate(${knob.x}px,${knob.y}px)` }}>{isDriving ? <Car /> : <Footprints />}</span></div>
     {isDriving ? <div className="drive-controls">
       <button className="vehicle-exit" aria-label="Exit vehicle" onClick={exitVehicle}><LogOut /><small>EXIT</small></button>
+      <button className="vehicle-tool" aria-label="Toggle headlights" aria-pressed={inputState.headlights} onClick={toggleLights}><Lightbulb /><small>LIGHTS</small></button>
+      <button className="vehicle-tool" aria-label="Horn" onPointerDown={pressHorn} onPointerUp={releaseHorn} onPointerCancel={releaseHorn}><Volume2 /><small>HORN</small></button>
+      <button className="pedal pedal--handbrake" aria-label="Handbrake" onPointerDown={pressHandbrake} onPointerUp={releaseHandbrake} onPointerCancel={releaseHandbrake}><Hand /><small>HAND</small></button>
       <button className="pedal pedal--brake" aria-label="Brake or reverse" onPointerDown={() => pressPedal(-1)} onPointerUp={releasePedal} onPointerCancel={releasePedal}><MoveDown /><small>BRAKE</small></button>
       <button className="pedal pedal--accelerate" aria-label="Accelerate" onPointerDown={() => pressPedal(1)} onPointerUp={releasePedal} onPointerCancel={releasePedal}><MoveUp /><small>GAS</small></button>
     </div> : <div className="action-buttons">

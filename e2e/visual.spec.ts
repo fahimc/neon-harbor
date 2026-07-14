@@ -123,6 +123,9 @@ test.describe('gameplay visual rendering', () => {
 
     await expect(page.getByRole('button', { name: 'Accelerate' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Brake or reverse' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Handbrake' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Horn' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Toggle headlights' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Exit vehicle' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Jump' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Sprint' })).toHaveCount(0)
@@ -131,10 +134,13 @@ test.describe('gameplay visual rendering', () => {
     const speedometer = await page.locator('.speedometer').boundingBox()
     const accelerate = await page.getByRole('button', { name: 'Accelerate' }).boundingBox()
     const brake = await page.getByRole('button', { name: 'Brake or reverse' }).boundingBox()
+    const handbrake = await page.getByRole('button', { name: 'Handbrake' }).boundingBox()
+    const horn = await page.getByRole('button', { name: 'Horn' }).boundingBox()
+    const headlights = await page.getByRole('button', { name: 'Toggle headlights' }).boundingBox()
     const exit = await page.getByRole('button', { name: 'Exit vehicle' }).boundingBox()
-    expect(minimap && speedometer && accelerate && brake && exit).toBeTruthy()
+    expect(minimap && speedometer && accelerate && brake && handbrake && horn && headlights && exit).toBeTruthy()
 
-    for (const control of [accelerate!, brake!, exit!]) {
+    for (const control of [accelerate!, brake!, handbrake!, horn!, headlights!, exit!]) {
       expect(overlaps(control, minimap!)).toBe(false)
       expect(overlaps(control, speedometer!)).toBe(false)
     }

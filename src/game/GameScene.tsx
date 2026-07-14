@@ -5,6 +5,7 @@ import * as THREE from 'three'
 import { ChunkCache, chunksAround, districtAt, type WorldAsset, type WorldChunk } from '../core/world'
 import { stepMotion, type Obstacle, type PlayerMotion } from '../core/movement'
 import { trafficAt } from '../core/traffic'
+import type { TrafficCar } from '../core/traffic'
 import { useGameStore } from '../state/gameStore'
 import { inputState, installKeyboard } from './input'
 
@@ -30,6 +31,8 @@ const runtimeVisual = {
   characterAction: 'idle',
   legPose: [0, 0, 0, 1] as [number, number, number, number],
   carForward: { x: 0, z: 1 },
+  vehicle: { gear: 'P', damage: 0, handbrake: false, headlights: false, horn: false, lastImpact: 0 },
+  traffic: { count: 0, braking: 0 },
 }
 
 function setInstances(mesh: THREE.InstancedMesh | null, items: WorldAsset[], scaleMultiplier: [number, number, number] = [1, 1, 1], yOffset = 0) {
@@ -72,13 +75,40 @@ function InstancedWorld({ chunks }: { chunks: WorldChunk[] }) {
 
 function Traffic({ position }: { position: { x: number; z: number } }) {
   const mesh = useRef<THREE.InstancedMesh>(null)
+  const lightMesh = useRef<THREE.InstancedMesh>(null)
   useFrame(({ clock }) => {
     if (!mesh.current) return
     const dummy = new THREE.Object3D()
-    trafficAt(clock.elapsedTime, position.x, position.z).forEach((car, i) => { dummy.position.set(car.x, .8, car.z); dummy.rotation.y = car.heading; dummy.scale.set(1.9, 1.25, 3.8); dummy.updateMatrix(); mesh.current!.setMatrixAt(i, dummy.matrix); mesh.current!.setColorAt(i, new THREE.Color(car.color)) })
+    const traffic = trafficAt(clock.elapsedTime, position.x, position.z)
+    runtimeVisual.traffic.count = traffic.length
+    runtimeVisual.traffic.braking = traffic.filter((car) => car.brake).length
+    traffic.forEach((car, i) => {
+      dummy.position.set(car.x, .8, car.z); dummy.rotation.y = car.heading; dummy.scale.set(1.9, 1.25, 3.8); dummy.updateMatrix(); mesh.current!.setMatrixAt(i, dummy.matrix); mesh.current!.setColorAt(i, new THREE.Color(car.color))
+      if (lightMesh.current) {
+        dummy.position.set(car.x + Math.sin(car.heading) * 2.1, 1.03, car.z + Math.cos(car.heading) * 2.1)
+        dummy.rotation.y = car.heading
+        dummy.scale.set(.9, .22, .18)
+        dummy.updateMatrix()
+        lightMesh.current.setMatrixAt(i * 2, dummy.matrix)
+        lightMesh.current.setColorAt(i * 2, new THREE.Color(car.headlights ? '#fff3a3' : '#6b7280'))
+        dummy.position.set(car.x - Math.sin(car.heading) * 2.1, 1.03, car.z - Math.cos(car.heading) * 2.1)
+        dummy.updateMatrix()
+        lightMesh.current.setMatrixAt(i * 2 + 1, dummy.matrix)
+        lightMesh.current.setColorAt(i * 2 + 1, new THREE.Color(car.brake ? '#ff1744' : '#8b1026'))
+      }
+    })
     mesh.current.instanceMatrix.needsUpdate = true; if (mesh.current.instanceColor) mesh.current.instanceColor.needsUpdate = true
+    if (lightMesh.current) {
+      lightMesh.current.instanceMatrix.needsUpdate = true
+      if (lightMesh.current.instanceColor) lightMesh.current.instanceColor.needsUpdate = true
+      const materials = Array.isArray(lightMesh.current.material) ? lightMesh.current.material : [lightMesh.current.material]
+      materials.forEach((material) => { material.needsUpdate = true })
+    }
   })
-  return <instancedMesh ref={mesh} args={[undefined, undefined, 18]}><boxGeometry args={[1, 1, 1]} /><meshBasicMaterial color="#fa3155" toneMapped={false} side={THREE.DoubleSide} /></instancedMesh>
+  return <>
+    <instancedMesh ref={mesh} args={[undefined, undefined, 24]}><boxGeometry args={[1, 1, 1]} /><meshBasicMaterial color="#fa3155" toneMapped={false} side={THREE.DoubleSide} /></instancedMesh>
+    <instancedMesh ref={lightMesh} args={[undefined, undefined, 48]}><boxGeometry args={[1, 1, 1]} /><meshBasicMaterial vertexColors toneMapped={false} side={THREE.DoubleSide} /></instancedMesh>
+  </>
 }
 
 function Character({ selected }: { selected: number }) {
@@ -121,7 +151,8 @@ function Vehicle() {
   return <group ref={group} position={[0, .72, 0]}>
     <mesh scale={[2, 1.15, 4.3]}><boxGeometry /><meshBasicMaterial color="#ff315d" toneMapped={false} /></mesh>
     <mesh position={[0, .78, -.3]} scale={[1.66, .72, 2]}><boxGeometry /><meshBasicMaterial color="#263c58" toneMapped={false} /></mesh>
-    <mesh position={[0, .18, 2.17]} scale={[1.7, .34, .12]}><boxGeometry /><meshBasicMaterial color="#ffe88a" toneMapped={false} /></mesh>
+    <mesh position={[0, .18, 2.17]} scale={[1.7, .34, .12]}><boxGeometry /><meshBasicMaterial color={inputState.headlights ? '#fff3a3' : '#ffe88a'} toneMapped={false} /></mesh>
+    <mesh position={[0, .2, -2.17]} scale={[1.7, .28, .12]}><boxGeometry /><meshBasicMaterial color={inputState.z < -.05 || inputState.handbrake ? '#ff1744' : '#7f1d1d'} toneMapped={false} /></mesh>
     {([-1.03, 1.03] as const).flatMap((x) => [-1.42, 1.42].map((z) => <mesh key={`${x}:${z}`} position={[x, -.32, z]} rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[.46, .46, .34, 10]} /><meshBasicMaterial color="#111827" toneMapped={false} /></mesh>))}
   </group>
 }
@@ -134,21 +165,23 @@ function PlayerController({ chunks, frozen }: { chunks: WorldChunk[]; frozen: bo
   const group = useRef<THREE.Group>(null)
   const internal = useRef<PlayerMotion>(cloneMotion(useGameStore.getState().motion))
   const syncClock = useRef(0)
-  const obstacles = useMemo<Obstacle[]>(() => chunks.flatMap((c) => c.assets.filter((a) => ['tower','hotel','house','shop'].includes(a.kind)).map((a) => ({ x: a.x, z: a.z, halfX: a.scale[0] / 2, halfZ: a.scale[2] / 2 }))), [chunks])
+  const obstacles = useMemo<Obstacle[]>(() => chunks.flatMap((c) => c.assets.filter((a) => ['tower','hotel','house','shop','parkedCar'].includes(a.kind)).map((a) => ({ x: a.x, z: a.z, halfX: a.kind === 'parkedCar' ? 2 : a.scale[0] / 2, halfZ: a.kind === 'parkedCar' ? 4 : a.scale[2] / 2 }))), [chunks])
   useEffect(() => installKeyboard(), [])
   useEffect(() => {
     if (internal.current.mode === mode) return
     internal.current = { ...internal.current, mode, velocity: { x: 0, y: 0, z: 0 } }
     runtimeMotion = cloneMotion(internal.current)
   }, [mode])
-  useFrame((_, delta) => {
+  useFrame(({ clock }, delta) => {
     if (frozen) return
     const requestedMode = useGameStore.getState().motion.mode
     if (internal.current.mode !== requestedMode) {
       internal.current = { ...internal.current, mode: requestedMode, velocity: { x: 0, y: 0, z: 0 } }
     }
-    internal.current = stepMotion(internal.current, { x: inputState.x, z: inputState.z, sprint: inputState.sprint, jump: inputState.jumpQueued, cameraHeading: inputState.cameraHeading }, delta, obstacles)
+    const trafficObstacles: Obstacle[] = internal.current.mode === 'car' ? trafficAt(clock.elapsedTime, internal.current.position.x, internal.current.position.z).map((car: TrafficCar) => ({ x: car.x, z: car.z, halfX: 2.2, halfZ: 4.2 })) : []
+    internal.current = stepMotion(internal.current, { x: inputState.x, z: inputState.z, sprint: inputState.sprint, jump: inputState.jumpQueued, cameraHeading: inputState.cameraHeading, handbrake: inputState.handbrake, headlights: inputState.headlights, horn: inputState.horn }, delta, [...obstacles, ...trafficObstacles])
     runtimeMotion = internal.current
+    runtimeVisual.vehicle = { ...internal.current.vehicle }
     inputState.jumpQueued = false
     if (group.current) { group.current.position.set(internal.current.position.x, internal.current.position.y, internal.current.position.z); group.current.rotation.y = internal.current.heading }
     syncClock.current += delta
@@ -182,7 +215,7 @@ function RenderProbe() {
     const debugWindow = window as unknown as { __NEON_RENDER__: object; __NEON_E2E__: object }
     if (import.meta.env.DEV) {
       const renderStats = { calls: render.calls, triangles: render.triangles, points: render.points, lines: render.lines, frame: render.frame }
-      debugWindow.__NEON_E2E__ = { frame: frames.current, input: { x: inputState.x, z: inputState.z, cameraHeading: inputState.cameraHeading }, motion: cloneMotion(runtimeMotion), visuals: { ...VISUALS, characterAction: runtimeVisual.characterAction, legPose: [...runtimeVisual.legPose], carForward: { ...runtimeVisual.carForward } }, render: renderStats }
+      debugWindow.__NEON_E2E__ = { frame: frames.current, input: { x: inputState.x, z: inputState.z, cameraHeading: inputState.cameraHeading, handbrake: inputState.handbrake, horn: inputState.horn, headlights: inputState.headlights }, motion: cloneMotion(runtimeMotion), visuals: { ...VISUALS, characterAction: runtimeVisual.characterAction, legPose: [...runtimeVisual.legPose], carForward: { ...runtimeVisual.carForward }, vehicle: { ...runtimeVisual.vehicle }, traffic: { ...runtimeVisual.traffic } }, render: renderStats }
       if (frames.current % 60 === 0) debugWindow.__NEON_RENDER__ = renderStats
     } else if (frames.current % 60 === 0) {
       debugWindow.__NEON_RENDER__ = { calls: render.calls, triangles: render.triangles, points: render.points, lines: render.lines, frame: render.frame }

@@ -27,7 +27,8 @@ export function GameScreen({ frozen = false }: { frozen?: boolean }) {
     <header className="hud-top"><button className="hud-button" aria-label="Pause" onClick={() => setScreen('pause')}><Menu /></button><div className="location"><Navigation /><span><small>NOW ENTERING</small><b>{district}</b></span></div><div className="hud-right"><span className="cash">${cash.toLocaleString()}</span><span className="wanted" aria-label={`${wanted} wanted stars`}>{Array.from({ length: 3 }, (_, i) => <i key={i} className={i < wanted ? 'active' : ''}>★</i>)}</span><span className="health"><Heart fill="currentColor" />{health}</span></div></header>
     <aside className="mission-card"><small>CURRENT MISSION</small><b>FIRST LIGHT</b><span>Reach the marina</span><div><Crosshair /> 1.2 KM</div></aside>
     <button className="minimap" aria-label="Open map" onClick={() => setScreen('map')}><span className="mini-water" /><i className="mini-road a" /><i className="mini-road b" /><i className="mini-road c" /><span className="mini-player">▲</span><span className="mini-north">N</span></button>
-    {motion.mode === 'car' && <div className="speedometer"><Car /><strong>{speed}</strong><span>KM/H</span></div>}
+    {motion.mode === 'car' && <div className="speedometer"><Car /><strong>{speed}</strong><span>KM/H</span><em>{motion.vehicle.gear}</em><small>DMG {Math.round(motion.vehicle.damage)}%</small></div>}
+    {motion.mode === 'car' && <div className="vehicle-status" aria-label="Vehicle status"><span className={motion.vehicle.headlights ? 'active' : ''}>LIGHTS</span><span className={motion.vehicle.horn ? 'active' : ''}>HORN</span><span className={motion.vehicle.handbrake ? 'active' : ''}>HAND</span></div>}
     {!frozen && <TouchControls />}<div className="game-hint">{motion.mode === 'car' ? 'STEER LEFT · GAS / BRAKE RIGHT · DRAG TO LOOK · E TO EXIT' : 'WASD / JOYSTICK TO MOVE · DRAG TO LOOK · SPACE TO JUMP · E TO DRIVE'}</div>
   </main>
 }

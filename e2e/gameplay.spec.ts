@@ -3,12 +3,14 @@ import { PNG } from 'pngjs'
 
 type GameDebug = {
   frame: number
-  input: { x: number; z: number; cameraHeading: number }
+  input: { x: number; z: number; cameraHeading: number; handbrake: boolean; horn: boolean; headlights: boolean }
   visuals: {
     rendering: string
     characterAction: string
     legPose: [number, number, number, number]
     carForward: { x: number; z: number }
+    vehicle: { gear: 'P' | 'D' | 'R'; damage: number; handbrake: boolean; headlights: boolean; horn: boolean; lastImpact: number }
+    traffic: { count: number; braking: number }
   }
   render: { calls: number; triangles: number }
   motion: {
@@ -112,8 +114,13 @@ test('world is lit, character moves smoothly, and Drive enters a working car', a
 
   await page.getByRole('button', { name: 'Enter vehicle' }).click()
   await expect(page.getByRole('button', { name: 'Exit vehicle' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Handbrake' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Horn' })).toBeVisible()
+  await page.getByRole('button', { name: 'Toggle headlights' }).click()
   await page.waitForTimeout(500)
   expect((await debugState(page)).motion.mode).toBe('car')
+  expect((await debugState(page)).visuals.vehicle.headlights).toBe(true)
+  expect((await debugState(page)).visuals.traffic.count).toBeGreaterThanOrEqual(20)
 
   let carStart = (await debugState(page)).motion.position
   let carSamples = await holdButton(page, 'Accelerate', 900)
@@ -132,6 +139,14 @@ test('world is lit, character moves smoothly, and Drive enters a working car', a
   expect(car.mode).toBe('car')
   expect(carDistance).toBeGreaterThan(1)
   expect(Math.max(...carSamples.map((sample) => Math.hypot(sample.motion.velocity.x, sample.motion.velocity.z)))).toBeGreaterThan(2)
+  expect(carSamples.some((sample) => sample.visuals.vehicle.gear === 'D' || sample.visuals.vehicle.gear === 'R')).toBe(true)
   const forwardAlignment = (carDelta.x * carState.visuals.carForward.x + carDelta.z * carState.visuals.carForward.z) / carDistance
   expect(Math.abs(forwardAlignment)).toBeGreaterThan(.85)
+
+  const handbrakeSamples = await holdButton(page, 'Handbrake', 300)
+  expect(handbrakeSamples.some((sample) => sample.visuals.vehicle.handbrake)).toBe(true)
+  expect((await debugState(page)).visuals.vehicle.handbrake).toBe(false)
+  const hornSamples = await holdButton(page, 'Horn', 200)
+  expect(hornSamples.some((sample) => sample.visuals.vehicle.horn)).toBe(true)
+  expect((await debugState(page)).visuals.vehicle.horn).toBe(false)
 })

@@ -1,6 +1,8 @@
 export interface Vec3 { x: number; y: number; z: number }
-export interface PlayerMotion { position: Vec3; velocity: Vec3; heading: number; grounded: boolean; mode: 'foot' | 'car' }
-export interface MoveInput { x: number; z: number; sprint: boolean; jump: boolean; cameraHeading: number }
+export type VehicleGear = 'P' | 'D' | 'R'
+export interface VehicleState { gear: VehicleGear; damage: number; handbrake: boolean; headlights: boolean; horn: boolean; lastImpact: number }
+export interface PlayerMotion { position: Vec3; velocity: Vec3; heading: number; grounded: boolean; mode: 'foot' | 'car'; vehicle: VehicleState }
+export interface MoveInput { x: number; z: number; sprint: boolean; jump: boolean; cameraHeading: number; handbrake?: boolean; headlights?: boolean; horn?: boolean }
 export interface Obstacle { x: number; z: number; halfX: number; halfZ: number }
 
 export function normalizeInput(x: number, z: number) {
@@ -53,21 +55,22 @@ function clamp(value: number, min: number, max: number) {
 function stepCarMotion(state: PlayerMotion, input: MoveInput, safeDt: number, obstacles: Obstacle[]): PlayerMotion {
   const steer = clamp(input.x, -1, 1)
   const throttle = clamp(input.z, -1, 1)
+  const handbrake = Boolean(input.handbrake)
   const velocity = { ...state.velocity }
   const currentSpeed = Math.hypot(velocity.x, velocity.z)
   let heading = state.heading
   const hasThrottle = Math.abs(throttle) > .03
   if (Math.abs(steer) > .03 && (hasThrottle || currentSpeed > .25)) {
     const reverseMultiplier = throttle < -.03 ? -1 : 1
-    const speedAuthority = .45 + Math.min(currentSpeed / 18, 1) * .8
-    heading += steer * reverseMultiplier * speedAuthority * 2.45 * safeDt
+    const speedAuthority = .45 + Math.min(currentSpeed / 18, 1) * (handbrake ? 1.25 : .8)
+    heading += steer * reverseMultiplier * speedAuthority * (handbrake ? 3.8 : 2.45) * safeDt
   }
 
   const forwardX = Math.sin(heading)
   const forwardZ = Math.cos(heading)
   const maxSpeed = throttle < 0 ? 10 : 24
   const targetSpeed = hasThrottle ? throttle * maxSpeed : 0
-  const response = hasThrottle ? 3.2 : 2.1
+  const response = handbrake ? 5.8 : hasThrottle ? 3.2 : 2.1
   const blend = 1 - Math.exp(-response * safeDt)
   const targetX = forwardX * targetSpeed
   const targetZ = forwardZ * targetSpeed
@@ -76,22 +79,33 @@ function stepCarMotion(state: PlayerMotion, input: MoveInput, safeDt: number, ob
   const forwardSpeed = velocity.x * forwardX + velocity.z * forwardZ
   const sideX = Math.cos(heading)
   const sideZ = -Math.sin(heading)
-  const sideSpeed = (velocity.x * sideX + velocity.z * sideZ) * .18
+  const sideGrip = handbrake ? .58 : .18
+  const sideSpeed = (velocity.x * sideX + velocity.z * sideZ) * sideGrip
   velocity.x = forwardX * forwardSpeed + sideX * sideSpeed
   velocity.z = forwardZ * forwardSpeed + sideZ * sideSpeed
   const planar = Math.hypot(velocity.x, velocity.z)
   const cap = throttle < 0 ? 10 : 24
   if (planar > cap) { velocity.x *= cap / planar; velocity.z *= cap / planar }
+  if (handbrake && planar > 1) {
+    const scrub = Math.max(0, 1 - safeDt * 1.9)
+    velocity.x *= scrub
+    velocity.z *= scrub
+  }
 
   velocity.y -= 22 * safeDt
   const position = { ...state.position }
   const radius = 1.8
   const nextX = position.x + velocity.x * safeDt
   const nextZ = position.z + velocity.z * safeDt
-  if (!collides(nextX, position.z, radius, obstacles)) position.x = nextX; else velocity.x = 0
-  if (!collides(position.x, nextZ, radius, obstacles)) position.z = nextZ; else velocity.z = 0
+  const blockedX = collides(nextX, position.z, radius, obstacles)
+  const blockedZ = collides(position.x, nextZ, radius, obstacles)
+  let impact = 0
+  if (!blockedX) position.x = nextX; else { impact = Math.max(impact, Math.abs(velocity.x)); velocity.x *= -.18 }
+  if (!blockedZ) position.z = nextZ; else { impact = Math.max(impact, Math.abs(velocity.z)); velocity.z *= -.18 }
   position.y += velocity.y * safeDt
   let grounded = false
   if (position.y <= 0) { position.y = 0; velocity.y = 0; grounded = true }
-  return { ...state, position, velocity, grounded, heading }
+  const damage = clamp(state.vehicle.damage + Math.max(0, impact - 5) * 1.35, 0, 100)
+  const gear: VehicleGear = Math.abs(throttle) < .03 && Math.hypot(velocity.x, velocity.z) < .4 ? 'P' : throttle < -.03 ? 'R' : 'D'
+  return { ...state, position, velocity, grounded, heading, vehicle: { gear, damage, handbrake, headlights: Boolean(input.headlights), horn: Boolean(input.horn), lastImpact: impact } }
 }
