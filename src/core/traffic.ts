@@ -25,7 +25,7 @@ export function trafficAt(timeSeconds: number, centerX: number, centerZ: number,
   })
 }
 
-export function trafficWithPedestrianYield(cars: TrafficCar[], pedestrian: PedestrianYieldTarget, radius = 18): TrafficCar[] {
+export function trafficWithPedestrianYield(cars: TrafficCar[], pedestrian: PedestrianYieldTarget, radius = 26): TrafficCar[] {
   if (!pedestrian.active) return cars
   return cars.map((car) => {
     const dx = pedestrian.x - car.x
@@ -34,9 +34,13 @@ export function trafficWithPedestrianYield(cars: TrafficCar[], pedestrian: Pedes
     const forwardX = Math.sin(car.heading)
     const forwardZ = Math.cos(car.heading)
     const ahead = dx * forwardX + dz * forwardZ
-    const laneDistance = Math.abs(dx * forwardZ - dz * forwardX)
-    if (distance <= radius && ahead > -4 && ahead < radius + 4 && laneDistance < 7) {
-      return { ...car, speed: 0, brake: true }
+    const signedLaneDistance = dx * forwardZ - dz * forwardX
+    const laneDistance = Math.abs(signedLaneDistance)
+    if (distance <= radius && ahead > -5 && ahead < radius + 6 && laneDistance < 8) {
+      const stopDistance = 6.2
+      const rightX = forwardZ
+      const rightZ = -forwardX
+      return { ...car, x: pedestrian.x - forwardX * stopDistance - rightX * signedLaneDistance, z: pedestrian.z - forwardZ * stopDistance - rightZ * signedLaneDistance, speed: 0, brake: true }
     }
     return car
   })

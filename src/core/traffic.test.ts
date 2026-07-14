@@ -12,6 +12,12 @@ describe('pooled traffic simulation', () => {
     const yielded = trafficWithPedestrianYield([{ id: 1, x: 0, z: 0, heading: 0, color: '#fff', speed: 8, lane: 1, brake: false, headlights: true }], { active: true, x: 0, z: 10 })
     expect(yielded[0].speed).toBe(0)
     expect(yielded[0].brake).toBe(true)
+    expect(yielded[0].z).toBeCloseTo(3.8)
+  })
+  it('keeps yielded cars behind the pedestrian even when they are already close', () => {
+    const yielded = trafficWithPedestrianYield([{ id: 1, x: 0, z: 8, heading: 0, color: '#fff', speed: 8, lane: 1, brake: false, headlights: true }], { active: true, x: 0, z: 10 })
+    expect(yielded[0].z).toBeCloseTo(3.8)
+    expect(yielded[0].z).toBeLessThan(10)
   })
   it('does not stop traffic for inactive or off-lane pedestrians', () => {
     const car = { id: 1, x: 0, z: 0, heading: 0, color: '#fff', speed: 8, lane: 1, brake: false, headlights: true }

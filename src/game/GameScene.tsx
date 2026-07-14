@@ -113,6 +113,22 @@ function nearestParkedCar(cars: WorldAsset[], position: { x: number; z: number }
   return best
 }
 
+function trafficObstacle(car: TrafficCar, padding = 0): Obstacle {
+  const horizontal = Math.abs(Math.sin(car.heading)) > .7
+  return {
+    x: car.x,
+    z: car.z,
+    halfX: (horizontal ? 4.35 : 2.2) + padding,
+    halfZ: (horizontal ? 2.2 : 4.35) + padding,
+  }
+}
+
+function worldAssetObstacle(asset: WorldAsset): Obstacle {
+  if (asset.kind !== 'parkedCar') return { x: asset.x, z: asset.z, halfX: asset.scale[0] / 2, halfZ: asset.scale[2] / 2 }
+  const horizontal = Math.abs(Math.sin(asset.rotation)) > .7
+  return { x: asset.x, z: asset.z, halfX: horizontal ? 4.35 : 2.2, halfZ: horizontal ? 2.2 : 4.35 }
+}
+
 function setInstances(mesh: THREE.InstancedMesh | null, items: WorldAsset[], scaleMultiplier: [number, number, number] = [1, 1, 1], yOffset = 0) {
   if (!mesh) return
   const dummy = new THREE.Object3D()
@@ -311,7 +327,7 @@ function PlayerController({ chunks, frozen }: { chunks: WorldChunk[]; frozen: bo
   const group = useRef<THREE.Group>(null)
   const internal = useRef<PlayerMotion>(cloneMotion(useGameStore.getState().motion))
   const syncClock = useRef(0)
-  const obstacles = useMemo<Obstacle[]>(() => chunks.flatMap((c) => c.assets.filter((a) => ['tower','hotel','house','shop','parkedCar'].includes(a.kind)).map((a) => ({ x: a.x, z: a.z, halfX: a.kind === 'parkedCar' ? 2 : a.scale[0] / 2, halfZ: a.kind === 'parkedCar' ? 4 : a.scale[2] / 2 }))), [chunks])
+  const obstacles = useMemo<Obstacle[]>(() => chunks.flatMap((c) => c.assets.filter((a) => ['tower','hotel','house','shop','parkedCar'].includes(a.kind)).map(worldAssetObstacle)), [chunks])
   const parkedCars = useMemo(() => chunks.flatMap((c) => c.assets.filter((a) => a.kind === 'parkedCar')), [chunks])
   useEffect(() => installKeyboard(), [])
   useEffect(() => {
@@ -331,9 +347,9 @@ function PlayerController({ chunks, frozen }: { chunks: WorldChunk[]; frozen: bo
     } else if (getVehicleAccessTarget().prompt !== 'Press E / F or tap EXIT to leave vehicle') {
       setVehicleAccessTarget({ ...DEFAULT_VEHICLE_ACCESS, x: internal.current.position.x, z: internal.current.position.z, heading: internal.current.heading, prompt: 'Press E / F or tap EXIT to leave vehicle' })
     }
-    const trafficObstacles: Obstacle[] = internal.current.mode === 'car' ? visibleTraffic
+    const trafficObstacles: Obstacle[] = visibleTraffic
       .filter((car: TrafficCar) => Math.hypot(car.x - internal.current.position.x, car.z - internal.current.position.z) < 46)
-      .map((car: TrafficCar) => ({ x: car.x, z: car.z, halfX: 1.35, halfZ: 2.55 })) : []
+      .map((car: TrafficCar) => trafficObstacle(car, internal.current.mode === 'foot' ? .35 : 0))
     internal.current = stepMotion(internal.current, { x: inputState.x, z: inputState.z, sprint: inputState.sprint, jump: inputState.jumpQueued, cameraHeading: inputState.cameraHeading, handbrake: inputState.handbrake, headlights: inputState.headlights, horn: inputState.horn }, delta, [...obstacles, ...trafficObstacles])
     runtimeMotion = internal.current
     runtimeVisual.vehicle = { ...internal.current.vehicle }

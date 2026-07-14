@@ -14,6 +14,12 @@ describe('character and vehicle controls', () => {
   it('gives sprinting a higher maximum speed', () => { let walk = state(), run = state(); for (let i = 0; i < 240; i++) { walk = stepMotion(walk, { ...input, z: 1 }, 1 / 60); run = stepMotion(run, { ...input, z: 1, sprint: true }, 1 / 60) } expect(run.velocity.z).toBeGreaterThan(walk.velocity.z) })
   it('jumps only while grounded and returns to ground', () => { let current = stepMotion(state(), { ...input, jump: true }, 1 / 60); expect(current.position.y).toBeGreaterThan(0); const airborneVelocity = current.velocity.y; current = stepMotion(current, { ...input, jump: true }, 1 / 60); expect(current.velocity.y).toBeLessThan(airborneVelocity); for (let i = 0; i < 180; i++) current = stepMotion(current, input, 1 / 60); expect(current.grounded).toBe(true); expect(current.position.y).toBe(0) })
   it('slides along obstacles on an unblocked axis', () => { const current = { ...state(), position: { x: 0, y: 0, z: 0 }, velocity: { x: 5, y: 0, z: 2 } }; const next = stepMotion(current, input, .05, [{ x: .7, z: 0, halfX: .2, halfZ: 1 }]); expect(next.position.x).toBe(0); expect(next.position.z).toBeGreaterThan(0) })
+  it('blocks the character from walking through vehicle-sized obstacles', () => {
+    let current = state()
+    for (let i = 0; i < 80; i++) current = stepMotion(current, { ...input, z: 1 }, 1 / 60, [{ x: 0, z: 2.8, halfX: 2.2, halfZ: 4.35 }])
+    expect(current.position.z).toBeLessThan(.4)
+    expect(Math.abs(current.position.x)).toBeLessThan(.05)
+  })
   it('detects a circular player against expanded AABBs', () => { expect(collides(1.4, 0, .5, [{ x: 0, z: 0, halfX: 1, halfZ: 1 }])).toBe(true); expect(collides(2, 0, .5, [{ x: 0, z: 0, halfX: 1, halfZ: 1 }])).toBe(false) })
   it('clamps large frame gaps to keep physics stable', () => { const a = stepMotion(state(), { ...input, z: 1 }, 2); const b = stepMotion(state(), { ...input, z: 1 }, .05); expect(a).toEqual(b) })
   it('makes cars faster and prevents car jumping', () => { let car = state('car'); for (let i = 0; i < 300; i++) car = stepMotion(car, { ...input, z: 1, jump: true }, 1 / 60); expect(car.velocity.z).toBeGreaterThan(8.6); expect(car.position.y).toBe(0) })
