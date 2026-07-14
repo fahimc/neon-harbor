@@ -11,6 +11,7 @@ type GameDebug = {
     carForward: { x: number; z: number }
     vehicle: { gear: 'P' | 'D' | 'R'; damage: number; handbrake: boolean; headlights: boolean; horn: boolean; lastImpact: number }
     traffic: { count: number; braking: number }
+    vehicleArt: { textured: boolean; playerLayers: number; parkedParts: number; trafficParts: number }
   }
   render: { calls: number; triangles: number }
   motion: {
@@ -120,7 +121,11 @@ test('world is lit, character moves smoothly, and Drive enters a working car', a
   await page.waitForTimeout(500)
   expect((await debugState(page)).motion.mode).toBe('car')
   expect((await debugState(page)).visuals.vehicle.headlights).toBe(true)
-  expect((await debugState(page)).visuals.traffic.count).toBeGreaterThanOrEqual(20)
+  const vehicleScene = await debugState(page)
+  expect(vehicleScene.visuals.traffic.count).toBeGreaterThanOrEqual(20)
+  expect(vehicleScene.visuals.vehicleArt.textured).toBe(true)
+  expect(vehicleScene.visuals.vehicleArt.playerLayers).toBeGreaterThanOrEqual(16)
+  expect(vehicleScene.visuals.vehicleArt.trafficParts).toBeGreaterThanOrEqual(5)
 
   let carStart = (await debugState(page)).motion.position
   let carSamples = await holdButton(page, 'Accelerate', 900)
