@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import { Clone, Environment, useGLTF } from '@react-three/drei'
+import { Clone, useGLTF } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { ChunkCache, chunksAround, districtAt, type WorldAsset, type WorldChunk } from '../core/world'
@@ -9,6 +9,15 @@ import { useGameStore } from '../state/gameStore'
 import { inputState, installKeyboard } from './input'
 
 const cache = new ChunkCache()
+const LIGHTING = { ambient: 1.65, hemisphere: 2.2, sun: 3, exposure: 1.3 } as const
+
+function cloneMotion(motion: PlayerMotion): PlayerMotion {
+  return { ...motion, position: { ...motion.position }, velocity: { ...motion.velocity } }
+}
+
+// Rendering and the camera use this per-frame value. Zustand is intentionally
+// updated less often so the HUD stays cheap without making the world stutter.
+let runtimeMotion = cloneMotion(useGameStore.getState().motion)
 
 function setInstances(mesh: THREE.InstancedMesh | null, items: WorldAsset[], scaleMultiplier: [number, number, number] = [1, 1, 1]) {
   if (!mesh) return
@@ -55,36 +64,51 @@ function Traffic({ position }: { position: { x: number; z: number } }) {
   return <instancedMesh ref={mesh} args={[undefined, undefined, 18]} castShadow><boxGeometry args={[1, 1, 1]} /><meshStandardMaterial vertexColors metalness={.6} roughness={.3} /></instancedMesh>
 }
 
-function Character({ selected, moving, heading, mode }: { selected: number; moving: boolean; heading: number; mode: 'foot' | 'car' }) {
+function Character({ selected, mode }: { selected: number; mode: 'foot' | 'car' }) {
   const model = useGLTF(selected ? '/assets/kenney/character-d.glb' : '/assets/kenney/character-a.glb')
   const group = useRef<THREE.Group>(null)
-  useFrame(({ clock }) => { if (!group.current) return; const pace = moving ? Math.sin(clock.elapsedTime * 11) : 0; group.current.position.y = mode === 'car' ? -10 : Math.abs(pace) * .045; group.current.rotation.z = pace * .025 })
+  useFrame(({ clock }) => {
+    if (!group.current) return
+    const moving = Math.hypot(runtimeMotion.velocity.x, runtimeMotion.velocity.z) > .25
+    const pace = moving ? Math.sin(clock.elapsedTime * 11) : 0
+    group.current.position.y = mode === 'car' ? -10 : Math.abs(pace) * .045
+    group.current.rotation.z = pace * .025
+  })
   if (mode === 'car') return null
-  return <group ref={group} rotation={[0, heading, 0]} scale={.72}><Clone object={model.scene} castShadow /></group>
+  return <group ref={group} scale={.72}><Clone object={model.scene} castShadow /></group>
 }
 
 function PlayerController({ chunks, frozen }: { chunks: WorldChunk[]; frozen: boolean }) {
-  const motion = useGameStore((s) => s.motion)
+  const mode = useGameStore((s) => s.motion.mode)
   const selected = useGameStore((s) => s.character)
   const setMotion = useGameStore((s) => s.setMotion)
   const setDistrict = useGameStore((s) => s.setDistrict)
   const group = useRef<THREE.Group>(null)
-  const internal = useRef<PlayerMotion>(motion)
+  const internal = useRef<PlayerMotion>(cloneMotion(useGameStore.getState().motion))
   const syncClock = useRef(0)
   const obstacles = useMemo<Obstacle[]>(() => chunks.flatMap((c) => c.assets.filter((a) => ['tower','hotel','house','shop'].includes(a.kind)).map((a) => ({ x: a.x, z: a.z, halfX: a.scale[0] / 2, halfZ: a.scale[2] / 2 }))), [chunks])
   useEffect(() => installKeyboard(), [])
+  useEffect(() => {
+    if (internal.current.mode === mode) return
+    internal.current = { ...internal.current, mode, velocity: { x: 0, y: 0, z: 0 } }
+    runtimeMotion = cloneMotion(internal.current)
+  }, [mode])
   useFrame((_, delta) => {
     if (frozen) return
+    const requestedMode = useGameStore.getState().motion.mode
+    if (internal.current.mode !== requestedMode) {
+      internal.current = { ...internal.current, mode: requestedMode, velocity: { x: 0, y: 0, z: 0 } }
+    }
     internal.current = stepMotion(internal.current, { x: inputState.x, z: inputState.z, sprint: inputState.sprint, jump: inputState.jumpQueued, cameraHeading: inputState.cameraHeading }, delta, obstacles)
+    runtimeMotion = internal.current
     inputState.jumpQueued = false
-    if (group.current) { group.current.position.set(internal.current.position.x, internal.current.position.y, internal.current.position.z); group.current.rotation.y = internal.current.mode === 'car' ? internal.current.heading : 0 }
+    if (group.current) { group.current.position.set(internal.current.position.x, internal.current.position.y, internal.current.position.z); group.current.rotation.y = internal.current.heading }
     syncClock.current += delta
-    if (syncClock.current > .1) { syncClock.current = 0; setMotion({ ...internal.current, position: { ...internal.current.position }, velocity: { ...internal.current.velocity } }); setDistrict(districtAt(internal.current.position.x, internal.current.position.z)) }
+    if (syncClock.current > .1) { syncClock.current = 0; setMotion(cloneMotion(internal.current)); setDistrict(districtAt(internal.current.position.x, internal.current.position.z)) }
   })
-  const moving = Math.hypot(motion.velocity.x, motion.velocity.z) > .25
-  return <group ref={group} position={[motion.position.x, motion.position.y, motion.position.z]}>
-    <Character selected={selected} moving={moving} heading={motion.heading} mode={motion.mode} />
-    {motion.mode === 'car' && <group position={[0, .7, 0]}><mesh castShadow scale={[4.2, 1.2, 2]}><boxGeometry /><meshStandardMaterial color="#ff315d" metalness={.72} roughness={.25} /></mesh><mesh position={[0, .75, 0]} scale={[2, .65, 1.65]}><boxGeometry /><meshStandardMaterial color="#18283d" metalness={.5} roughness={.2} /></mesh></group>}
+  return <group ref={group}>
+    <Character selected={selected} mode={mode} />
+    {mode === 'car' && <group position={[0, .7, 0]}><mesh castShadow scale={[4.2, 1.2, 2]}><boxGeometry /><meshStandardMaterial color="#ff315d" metalness={.72} roughness={.25} /></mesh><mesh position={[0, .75, 0]} scale={[2, .65, 1.65]}><boxGeometry /><meshStandardMaterial color="#18283d" metalness={.5} roughness={.2} /></mesh></group>}
   </group>
 }
 
@@ -92,7 +116,7 @@ function CameraRig({ frozen }: { frozen: boolean }) {
   const { camera } = useThree()
   useFrame((_, delta) => {
     if (frozen) return
-    const motion = useGameStore.getState().motion
+    const motion = runtimeMotion
     const offset = motion.mode === 'car' ? 11 : 7.5
     const height = motion.mode === 'car' ? 5.4 : 4.1
     const target = new THREE.Vector3(motion.position.x - Math.sin(inputState.cameraHeading) * offset, motion.position.y + height, motion.position.z - Math.cos(inputState.cameraHeading) * offset)
@@ -105,9 +129,15 @@ function RenderProbe() {
   const { gl } = useThree()
   const frames = useRef(0)
   useFrame(() => {
-    if (++frames.current % 60 === 0) {
-      const render = gl.info.render
-      ;(window as unknown as { __NEON_RENDER__: object }).__NEON_RENDER__ = { calls: render.calls, triangles: render.triangles, points: render.points, lines: render.lines, frame: render.frame }
+    ++frames.current
+    const render = gl.info.render
+    const debugWindow = window as unknown as { __NEON_RENDER__: object; __NEON_E2E__: object }
+    if (import.meta.env.DEV) {
+      const renderStats = { calls: render.calls, triangles: render.triangles, points: render.points, lines: render.lines, frame: render.frame }
+      debugWindow.__NEON_E2E__ = { frame: frames.current, motion: cloneMotion(runtimeMotion), lighting: LIGHTING, render: renderStats }
+      if (frames.current % 60 === 0) debugWindow.__NEON_RENDER__ = renderStats
+    } else if (frames.current % 60 === 0) {
+      debugWindow.__NEON_RENDER__ = { calls: render.calls, triangles: render.triangles, points: render.points, lines: render.lines, frame: render.frame }
     }
   })
   return null
@@ -121,16 +151,17 @@ function World({ frozen }: { frozen: boolean }) {
   const chunks = useMemo(() => chunkCoords.map(([x, z]) => cache.get(x, z)), [chunkCoords])
   return <>
     <color attach="background" args={['#72c9df']} /><fog attach="fog" args={['#82cbd9', 80, radius * 105 + 115]} />
-    <hemisphereLight intensity={1.45} color="#fff4dd" groundColor="#17314d" /><directionalLight position={[-70, 100, -40]} intensity={2.2} color="#ffd29a" castShadow={quality !== 'low'} shadow-mapSize={[quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024]} />
+    <ambientLight intensity={LIGHTING.ambient} color="#d9efff" />
+    <hemisphereLight intensity={LIGHTING.hemisphere} color="#fff4dd" groundColor="#6b8294" />
+    <directionalLight position={[-70, 100, -40]} intensity={LIGHTING.sun} color="#ffd29a" castShadow={quality !== 'low'} shadow-mapSize={[quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024]} shadow-normalBias={.035} />
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[position.x, -.25, position.z]}><planeGeometry args={[1500, 1500]} /><meshStandardMaterial color="#1686a1" roughness={.18} metalness={.12} /></mesh>
     <InstancedWorld chunks={chunks} /><Traffic position={position} /><PlayerController chunks={chunks} frozen={frozen} /><CameraRig frozen={frozen} /><RenderProbe />
-    {quality === 'high' && <Environment preset="sunset" environmentIntensity={.18} />}
   </>
 }
 
 export function GameScene({ frozen = false }: { frozen?: boolean }) {
   const quality = useGameStore((s) => s.settings.quality)
-  return <Canvas shadows={quality !== 'low'} dpr={quality === 'high' ? [1, 1.7] : quality === 'medium' ? [1, 1.35] : 1} camera={{ fov: 58, near: .1, far: 900, position: [-70, 5, 10] }} gl={{ antialias: quality !== 'low', powerPreference: 'high-performance' }}><World frozen={frozen} /></Canvas>
+  return <Canvas shadows={quality !== 'low'} dpr={quality === 'high' ? [1, 1.7] : quality === 'medium' ? [1, 1.35] : 1} camera={{ fov: 58, near: .1, far: 900, position: [-70, 5, 10] }} gl={{ antialias: quality !== 'low', powerPreference: 'high-performance' }} onCreated={({ gl }) => { gl.toneMapping = THREE.ACESFilmicToneMapping; gl.toneMappingExposure = LIGHTING.exposure; gl.outputColorSpace = THREE.SRGBColorSpace }}><World frozen={frozen} /></Canvas>
 }
 
 useGLTF.preload('/assets/kenney/character-a.glb'); useGLTF.preload('/assets/kenney/character-d.glb')

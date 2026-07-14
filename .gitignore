@@ -12,3 +12,5 @@ android/local.properties
 /neon-*.png
 release/*.apk
 *.tsbuildinfo
+test-results/
+playwright-report/
