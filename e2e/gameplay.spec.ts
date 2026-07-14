@@ -1,14 +1,38 @@
 import { expect, test, type Page } from '@playwright/test'
+import { PNG } from 'pngjs'
 
 type GameDebug = {
   frame: number
-  lighting: { ambient: number; hemisphere: number; sun: number; exposure: number }
+  visuals: {
+    rendering: string
+    characterAction: string
+    legPose: [number, number, number, number]
+    carForward: { x: number; z: number }
+  }
   render: { calls: number; triangles: number }
   motion: {
     position: { x: number; y: number; z: number }
     velocity: { x: number; y: number; z: number }
     mode: 'foot' | 'car'
   }
+}
+
+function worldLuminance(screenshot: Buffer) {
+  const png = PNG.sync.read(screenshot)
+  const bounds = {
+    left: Math.floor(png.width * .28), right: Math.floor(png.width * .72),
+    top: Math.floor(png.height * .3), bottom: Math.floor(png.height * .72),
+  }
+  let luminance = 0
+  let pixels = 0
+  for (let y = bounds.top; y < bounds.bottom; y += 1) {
+    for (let x = bounds.left; x < bounds.right; x += 1) {
+      const offset = (y * png.width + x) * 4
+      luminance += png.data[offset] * .2126 + png.data[offset + 1] * .7152 + png.data[offset + 2] * .0722
+      pixels += 1
+    }
+  }
+  return luminance / pixels
 }
 
 async function debugState(page: Page) {
@@ -27,17 +51,20 @@ test('world is lit, character moves smoothly, and Drive enters a working car', a
   })
 
   const scene = await debugState(page)
-  expect(scene.lighting.ambient).toBeGreaterThanOrEqual(1.5)
-  expect(scene.lighting.hemisphere).toBeGreaterThanOrEqual(2)
-  expect(scene.lighting.sun).toBeGreaterThanOrEqual(2.5)
-  expect(scene.lighting.exposure).toBeGreaterThanOrEqual(1.2)
+  expect(scene.visuals.rendering).toBe('unlit-mobile')
+  expect(worldLuminance(await page.screenshot())).toBeGreaterThan(55)
 
   const start = scene.motion.position
   const samples: GameDebug['motion']['position'][] = []
+  const legSamples: GameDebug['visuals']['legPose'][] = []
+  const actionSamples: string[] = []
   await page.keyboard.down('KeyW')
   for (let index = 0; index < 16; index += 1) {
     await page.waitForTimeout(35)
-    samples.push((await debugState(page)).motion.position)
+    const sample = await debugState(page)
+    samples.push(sample.motion.position)
+    legSamples.push(sample.visuals.legPose)
+    actionSamples.push(sample.visuals.characterAction)
   }
   await page.keyboard.up('KeyW')
 
@@ -46,6 +73,8 @@ test('world is lit, character moves smoothly, and Drive enters a working car', a
   const uniquePositions = new Set(samples.map((point) => `${point.x.toFixed(3)},${point.z.toFixed(3)}`))
   expect(distance).toBeGreaterThan(0.5)
   expect(uniquePositions.size).toBeGreaterThanOrEqual(8)
+  expect(actionSamples).toContain('walk')
+  expect(new Set(legSamples.map((pose) => pose.map((value) => value.toFixed(3)).join(','))).size).toBeGreaterThanOrEqual(5)
 
   await page.getByRole('button', { name: 'Enter vehicle' }).click()
   await expect(page.getByRole('button', { name: 'Exit vehicle' })).toBeVisible()
@@ -55,9 +84,14 @@ test('world is lit, character moves smoothly, and Drive enters a working car', a
   const carStart = (await debugState(page)).motion.position
   await page.keyboard.down('KeyW')
   await page.waitForTimeout(900)
-  const car = (await debugState(page)).motion
+  const carState = await debugState(page)
+  const car = carState.motion
   await page.keyboard.up('KeyW')
   expect(car.mode).toBe('car')
-  expect(Math.hypot(car.position.x - carStart.x, car.position.z - carStart.z)).toBeGreaterThan(1)
+  const carDelta = { x: car.position.x - carStart.x, z: car.position.z - carStart.z }
+  const carDistance = Math.hypot(carDelta.x, carDelta.z)
+  expect(carDistance).toBeGreaterThan(1)
   expect(Math.hypot(car.velocity.x, car.velocity.z)).toBeGreaterThan(2)
+  const forwardAlignment = (carDelta.x * carState.visuals.carForward.x + carDelta.z * carState.visuals.carForward.z) / carDistance
+  expect(forwardAlignment).toBeGreaterThan(.92)
 })
