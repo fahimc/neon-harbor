@@ -25,7 +25,7 @@ export interface WorldChunk {
 }
 
 const BUILDING_COLORS = ['#f7b2c4', '#f6e6c9', '#7fd3c7', '#9ebee8', '#f2a65a', '#d9b8ff']
-const CAR_COLORS = ['#ef476f', '#06d6a0', '#118ab2', '#ffd166', '#f8f9fa', '#191b22']
+const CAR_COLORS = ['#ef476f', '#06d6a0', '#118ab2', '#ffd166', '#f8f9fa', '#4b5d86']
 
 export function hash2d(x: number, z: number, seed = DEFAULT_SEED) {
   let h = Math.imul(x ^ seed, 0x45d9f3b) ^ Math.imul(z + seed, 0x119de1f3)

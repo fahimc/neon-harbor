@@ -1,7 +1,7 @@
 import { CHUNK_SIZE } from './world'
 
 export interface TrafficCar { id: number; x: number; z: number; heading: number; color: string }
-const COLORS = ['#fa3155', '#27d6c5', '#ffd257', '#e8edf4', '#27324d']
+const COLORS = ['#fa3155', '#27d6c5', '#ffd257', '#e8edf4', '#4b5d86']
 
 export function trafficAt(timeSeconds: number, centerX: number, centerZ: number, count = 18): TrafficCar[] {
   const span = CHUNK_SIZE * 5

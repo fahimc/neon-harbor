@@ -3,6 +3,7 @@ import { PNG } from 'pngjs'
 
 type GameDebug = {
   frame: number
+  input: { x: number; z: number; cameraHeading: number }
   visuals: {
     rendering: string
     characterAction: string
@@ -51,10 +52,26 @@ test('world is lit, character moves smoothly, and Drive enters a working car', a
   })
 
   const scene = await debugState(page)
-  expect(scene.visuals.rendering).toBe('unlit-mobile')
-  expect(worldLuminance(await page.screenshot())).toBeGreaterThan(55)
+  expect(scene.visuals.rendering).toBe('bright-day-mobile')
+  expect(worldLuminance(await page.screenshot())).toBeGreaterThan(90)
 
-  const start = scene.motion.position
+  const controlStart = scene.motion.position
+  await page.keyboard.down('KeyA')
+  await page.waitForTimeout(350)
+  let controlSample = await debugState(page)
+  await page.keyboard.up('KeyA')
+  expect(controlSample.input.x).toBeGreaterThan(0)
+  expect(controlSample.motion.position.x).toBeLessThan(controlStart.x)
+  const afterLeft = controlSample.motion.position
+
+  await page.keyboard.down('KeyD')
+  await page.waitForTimeout(350)
+  controlSample = await debugState(page)
+  await page.keyboard.up('KeyD')
+  expect(controlSample.input.x).toBeLessThan(0)
+  expect(controlSample.motion.position.x).toBeGreaterThan(afterLeft.x)
+
+  const start = (await debugState(page)).motion.position
   const samples: GameDebug['motion']['position'][] = []
   const legSamples: GameDebug['visuals']['legPose'][] = []
   const actionSamples: string[] = []
