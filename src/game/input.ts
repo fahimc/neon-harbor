@@ -1,0 +1,16 @@
+export const inputState = { x: 0, z: 0, sprint: false, jumpQueued: false, cameraHeading: Math.PI }
+
+const down = new Set<string>()
+export function installKeyboard() {
+  const handleDown = (e: KeyboardEvent) => { down.add(e.code); if (e.code === 'Space') inputState.jumpQueued = true }
+  const handleUp = (e: KeyboardEvent) => down.delete(e.code)
+  window.addEventListener('keydown', handleDown)
+  window.addEventListener('keyup', handleUp)
+  const update = () => {
+    inputState.x = (down.has('KeyD') || down.has('ArrowRight') ? 1 : 0) - (down.has('KeyA') || down.has('ArrowLeft') ? 1 : 0)
+    inputState.z = (down.has('KeyW') || down.has('ArrowUp') ? 1 : 0) - (down.has('KeyS') || down.has('ArrowDown') ? 1 : 0)
+    inputState.sprint = down.has('ShiftLeft') || down.has('ShiftRight')
+  }
+  const timer = window.setInterval(update, 16)
+  return () => { window.removeEventListener('keydown', handleDown); window.removeEventListener('keyup', handleUp); window.clearInterval(timer); down.clear() }
+}

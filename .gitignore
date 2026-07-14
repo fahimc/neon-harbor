@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.idea/
+.vscode/
+*.log
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.jks
+*.keystore
+/neon-*.png
+release/*.apk
+*.tsbuildinfo
