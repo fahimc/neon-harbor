@@ -1,13 +1,15 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Car, Footprints, Gauge, Hand, Lightbulb, LogOut, MoveDown, MoveUp, Volume2 } from 'lucide-react'
 import { useGameStore } from '../state/gameStore'
 import { inputState } from './input'
+import { getVehicleAccessTarget } from './vehicleAccess'
 
 export function TouchControls() {
   const origin = useRef({ x: 0, y: 0 })
   const steeringActive = useRef(false)
   const pedalActive = useRef(false)
   const [knob, setKnob] = useState({ x: 0, y: 0 })
+  const [accessKind, setAccessKind] = useState(getVehicleAccessTarget().kind)
   const mode = useGameStore((s) => s.motion.mode)
   const toggleVehicle = useGameStore((s) => s.toggleVehicle)
   const isDriving = mode === 'car'
@@ -46,6 +48,10 @@ export function TouchControls() {
   const releaseHorn = () => { pedalActive.current = false; inputState.horn = false; syncTouchActive() }
   const toggleLights = () => { inputState.headlights = !inputState.headlights }
   const exitVehicle = () => { steeringActive.current = false; pedalActive.current = false; inputState.touchActive = false; inputState.x = 0; inputState.z = 0; inputState.sprint = false; inputState.handbrake = false; inputState.horn = false; toggleVehicle() }
+  useEffect(() => {
+    const id = window.setInterval(() => setAccessKind(getVehicleAccessTarget().kind), 150)
+    return () => window.clearInterval(id)
+  }, [])
 
   return <div className={`touch-controls ${isDriving ? 'touch-controls--car' : ''}`}>
     <div className={`joystick ${isDriving ? 'joystick--steer' : ''}`} aria-label={isDriving ? 'Steer vehicle' : 'Move'} onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end}><span style={{ transform: `translate(${knob.x}px,${knob.y}px)` }}>{isDriving ? <Car /> : <Footprints />}</span></div>
@@ -59,7 +65,7 @@ export function TouchControls() {
     </div> : <div className="action-buttons">
       <button aria-label="Jump" onPointerDown={() => { inputState.jumpQueued = true }}><MoveUp /><small>JUMP</small></button>
       <button aria-label="Sprint" onPointerDown={() => { inputState.sprint = true }} onPointerUp={() => { inputState.sprint = false }}><Gauge /><small>SPRINT</small></button>
-      <button className="action" aria-label="Enter vehicle" onClick={toggleVehicle}><Car /><small>DRIVE</small></button>
+      <button className={`action ${accessKind === 'traffic' ? 'action--hijack' : ''}`} aria-label="Enter vehicle" onClick={toggleVehicle}><Car /><small>{accessKind === 'traffic' ? 'HIJACK' : 'DRIVE'}</small></button>
     </div>}
   </div>
 }

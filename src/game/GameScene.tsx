@@ -4,11 +4,12 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { ChunkCache, chunksAround, districtAt, type WorldAsset, type WorldChunk } from '../core/world'
 import { stepMotion, type Obstacle, type PlayerMotion } from '../core/movement'
-import { trafficAt } from '../core/traffic'
+import { trafficAt, trafficWithPedestrianYield } from '../core/traffic'
 import type { TrafficCar } from '../core/traffic'
 import { vehicleProfileForId, type VehicleProfile } from '../core/vehicles'
 import { useGameStore } from '../state/gameStore'
 import { inputState, installKeyboard } from './input'
+import { DEFAULT_VEHICLE_ACCESS, getVehicleAccessTarget, setVehicleAccessTarget, type VehicleAccessTarget } from './vehicleAccess'
 
 const cache = new ChunkCache()
 const VISUALS = {
@@ -84,6 +85,32 @@ const runtimeVisual = {
   vehicle: { gear: 'P', damage: 0, handbrake: false, headlights: false, horn: false, lastImpact: 0 },
   traffic: { count: 0, braking: 0 },
   vehicleArt: { textured: true, playerLayers: 18, parkedParts: 7, trafficParts: 5 },
+}
+
+function nearestTrafficCar(cars: TrafficCar[], position: { x: number; z: number }, radius: number): VehicleAccessTarget | null {
+  let best: VehicleAccessTarget | null = null
+  let bestDistance = radius
+  for (const car of cars) {
+    const distance = Math.hypot(car.x - position.x, car.z - position.z)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = { kind: 'traffic', x: car.x, z: car.z, heading: car.heading, occupied: true, prompt: 'Press E / F or tap HIJACK to pull the driver out' }
+    }
+  }
+  return best
+}
+
+function nearestParkedCar(cars: WorldAsset[], position: { x: number; z: number }, radius: number): VehicleAccessTarget | null {
+  let best: VehicleAccessTarget | null = null
+  let bestDistance = radius
+  for (const car of cars) {
+    const distance = Math.hypot(car.x - position.x, car.z - position.z)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = { kind: 'parked', x: car.x, z: car.z, heading: car.rotation, occupied: false, prompt: 'Press E / F or tap DRIVE to enter this car' }
+    }
+  }
+  return best
 }
 
 function setInstances(mesh: THREE.InstancedMesh | null, items: WorldAsset[], scaleMultiplier: [number, number, number] = [1, 1, 1], yOffset = 0) {
@@ -180,7 +207,7 @@ function Traffic({ position }: { position: { x: number; z: number } }) {
   useFrame(({ clock }) => {
     if (!mesh.current) return
     const dummy = new THREE.Object3D()
-    const traffic = trafficAt(clock.elapsedTime, position.x, position.z)
+    const traffic = trafficWithPedestrianYield(trafficAt(clock.elapsedTime, position.x, position.z), { active: runtimeMotion.mode === 'foot', x: runtimeMotion.position.x, z: runtimeMotion.position.z })
     runtimeVisual.traffic.count = traffic.length
     runtimeVisual.traffic.braking = traffic.filter((car) => car.brake).length
     setVehiclePart(cabinMesh.current, traffic, [0, 1.17, -.3], [1.5, .58, 1.5], '#263c58')
@@ -285,19 +312,28 @@ function PlayerController({ chunks, frozen }: { chunks: WorldChunk[]; frozen: bo
   const internal = useRef<PlayerMotion>(cloneMotion(useGameStore.getState().motion))
   const syncClock = useRef(0)
   const obstacles = useMemo<Obstacle[]>(() => chunks.flatMap((c) => c.assets.filter((a) => ['tower','hotel','house','shop','parkedCar'].includes(a.kind)).map((a) => ({ x: a.x, z: a.z, halfX: a.kind === 'parkedCar' ? 2 : a.scale[0] / 2, halfZ: a.kind === 'parkedCar' ? 4 : a.scale[2] / 2 }))), [chunks])
+  const parkedCars = useMemo(() => chunks.flatMap((c) => c.assets.filter((a) => a.kind === 'parkedCar')), [chunks])
   useEffect(() => installKeyboard(), [])
   useEffect(() => {
     if (internal.current.mode === mode) return
-    internal.current = { ...internal.current, mode, velocity: { x: 0, y: 0, z: 0 } }
+    internal.current = cloneMotion(useGameStore.getState().motion)
     runtimeMotion = cloneMotion(internal.current)
   }, [mode])
   useFrame(({ clock }, delta) => {
     if (frozen) return
     const requestedMode = useGameStore.getState().motion.mode
     if (internal.current.mode !== requestedMode) {
-      internal.current = { ...internal.current, mode: requestedMode, velocity: { x: 0, y: 0, z: 0 } }
+      internal.current = cloneMotion(useGameStore.getState().motion)
     }
-    const trafficObstacles: Obstacle[] = internal.current.mode === 'car' ? trafficAt(clock.elapsedTime, internal.current.position.x, internal.current.position.z).map((car: TrafficCar) => ({ x: car.x, z: car.z, halfX: 2.2, halfZ: 4.2 })) : []
+    const visibleTraffic = trafficWithPedestrianYield(trafficAt(clock.elapsedTime, internal.current.position.x, internal.current.position.z), { active: internal.current.mode === 'foot', x: internal.current.position.x, z: internal.current.position.z })
+    if (internal.current.mode === 'foot') {
+      setVehicleAccessTarget(nearestTrafficCar(visibleTraffic, internal.current.position, 11) ?? nearestParkedCar(parkedCars, internal.current.position, 10) ?? { ...DEFAULT_VEHICLE_ACCESS, x: internal.current.position.x, z: internal.current.position.z, heading: internal.current.heading })
+    } else if (getVehicleAccessTarget().prompt !== 'Press E / F or tap EXIT to leave vehicle') {
+      setVehicleAccessTarget({ ...DEFAULT_VEHICLE_ACCESS, x: internal.current.position.x, z: internal.current.position.z, heading: internal.current.heading, prompt: 'Press E / F or tap EXIT to leave vehicle' })
+    }
+    const trafficObstacles: Obstacle[] = internal.current.mode === 'car' ? visibleTraffic
+      .filter((car: TrafficCar) => Math.hypot(car.x - internal.current.position.x, car.z - internal.current.position.z) < 46)
+      .map((car: TrafficCar) => ({ x: car.x, z: car.z, halfX: 1.35, halfZ: 2.55 })) : []
     internal.current = stepMotion(internal.current, { x: inputState.x, z: inputState.z, sprint: inputState.sprint, jump: inputState.jumpQueued, cameraHeading: inputState.cameraHeading, handbrake: inputState.handbrake, headlights: inputState.headlights, horn: inputState.horn }, delta, [...obstacles, ...trafficObstacles])
     runtimeMotion = internal.current
     runtimeVisual.vehicle = { ...internal.current.vehicle }
@@ -334,7 +370,7 @@ function RenderProbe() {
     const debugWindow = window as unknown as { __NEON_RENDER__: object; __NEON_E2E__: object }
     if (import.meta.env.DEV) {
       const renderStats = { calls: render.calls, triangles: render.triangles, points: render.points, lines: render.lines, frame: render.frame }
-      debugWindow.__NEON_E2E__ = { frame: frames.current, input: { x: inputState.x, z: inputState.z, cameraHeading: inputState.cameraHeading, handbrake: inputState.handbrake, horn: inputState.horn, headlights: inputState.headlights }, motion: cloneMotion(runtimeMotion), visuals: { ...VISUALS, characterAction: runtimeVisual.characterAction, legPose: [...runtimeVisual.legPose], carForward: { ...runtimeVisual.carForward }, vehicle: { ...runtimeVisual.vehicle }, traffic: { ...runtimeVisual.traffic }, vehicleArt: { ...runtimeVisual.vehicleArt } }, render: renderStats }
+      debugWindow.__NEON_E2E__ = { frame: frames.current, input: { x: inputState.x, z: inputState.z, cameraHeading: inputState.cameraHeading, handbrake: inputState.handbrake, horn: inputState.horn, headlights: inputState.headlights }, motion: cloneMotion(runtimeMotion), access: getVehicleAccessTarget(), visuals: { ...VISUALS, characterAction: runtimeVisual.characterAction, legPose: [...runtimeVisual.legPose], carForward: { ...runtimeVisual.carForward }, vehicle: { ...runtimeVisual.vehicle }, traffic: { ...runtimeVisual.traffic }, vehicleArt: { ...runtimeVisual.vehicleArt } }, render: renderStats }
       if (frames.current % 60 === 0) debugWindow.__NEON_RENDER__ = renderStats
     } else if (frames.current % 60 === 0) {
       debugWindow.__NEON_RENDER__ = { calls: render.calls, triangles: render.triangles, points: render.points, lines: render.lines, frame: render.frame }

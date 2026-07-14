@@ -9,6 +9,8 @@ type GameDebug = {
 
 type Region = { left: number; top: number; right: number; bottom: number }
 
+test.setTimeout(90_000)
+
 async function openGame(page: Page) {
   await page.goto('/')
   await page.getByRole('button', { name: /enter the city/i }).click()

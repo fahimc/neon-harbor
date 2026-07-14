@@ -1,9 +1,10 @@
 import { Car, Crosshair, Heart, Map, Menu, Navigation, Pause, Shield } from 'lucide-react'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useGameStore } from '../state/gameStore'
 import { GameScene } from './GameScene'
 import { TouchControls } from './TouchControls'
 import { inputState } from './input'
+import { getVehicleAccessTarget } from './vehicleAccess'
 
 export function GameScreen({ frozen = false }: { frozen?: boolean }) {
   const setScreen = useGameStore((s) => s.setScreen)
@@ -15,10 +16,15 @@ export function GameScreen({ frozen = false }: { frozen?: boolean }) {
   const sensitivity = useGameStore((s) => s.settings.sensitivity)
   const toggleVehicle = useGameStore((s) => s.toggleVehicle)
   const dragX = useRef<number | null>(null)
+  const [accessPrompt, setAccessPrompt] = useState(getVehicleAccessTarget().prompt)
   useEffect(() => {
     const key = (event: KeyboardEvent) => { if (event.code === 'KeyE' || event.code === 'KeyF') toggleVehicle() }
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key)
   }, [toggleVehicle])
+  useEffect(() => {
+    const id = window.setInterval(() => setAccessPrompt(getVehicleAccessTarget().prompt), 150)
+    return () => window.clearInterval(id)
+  }, [])
   const speed = Math.round(Math.hypot(motion.velocity.x, motion.velocity.z) * 3.6)
   const startLook = (event: React.PointerEvent<HTMLElement>) => { if ((event.target as HTMLElement).tagName !== 'CANVAS') return; dragX.current = event.clientX; event.currentTarget.setPointerCapture(event.pointerId) }
   const moveLook = (event: React.PointerEvent<HTMLElement>) => { if (dragX.current == null) return; inputState.cameraHeading -= (event.clientX - dragX.current) * sensitivity * .008; dragX.current = event.clientX }
@@ -29,6 +35,6 @@ export function GameScreen({ frozen = false }: { frozen?: boolean }) {
     <button className="minimap" aria-label="Open map" onClick={() => setScreen('map')}><span className="mini-water" /><i className="mini-road a" /><i className="mini-road b" /><i className="mini-road c" /><span className="mini-player">▲</span><span className="mini-north">N</span></button>
     {motion.mode === 'car' && <div className="speedometer"><Car /><strong>{speed}</strong><span>KM/H</span><em>{motion.vehicle.gear}</em><small>DMG {Math.round(motion.vehicle.damage)}%</small></div>}
     {motion.mode === 'car' && <div className="vehicle-status" aria-label="Vehicle status"><span className={motion.vehicle.headlights ? 'active' : ''}>LIGHTS</span><span className={motion.vehicle.horn ? 'active' : ''}>HORN</span><span className={motion.vehicle.handbrake ? 'active' : ''}>HAND</span></div>}
-    {!frozen && <TouchControls />}<div className="game-hint">{motion.mode === 'car' ? 'STEER LEFT · GAS / BRAKE RIGHT · DRAG TO LOOK · E TO EXIT' : 'WASD / JOYSTICK TO MOVE · DRAG TO LOOK · SPACE TO JUMP · E TO DRIVE'}</div>
+    {!frozen && <TouchControls />}<div className="vehicle-access-prompt">{accessPrompt}</div><div className="game-hint">{motion.mode === 'car' ? 'STEER LEFT · GAS / BRAKE RIGHT · DRAG TO LOOK · E TO EXIT' : 'WASD / JOYSTICK TO MOVE · DRAG TO LOOK · SPACE TO JUMP · E TO DRIVE'}</div>
   </main>
 }

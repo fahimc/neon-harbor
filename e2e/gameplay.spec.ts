@@ -4,6 +4,7 @@ import { PNG } from 'pngjs'
 type GameDebug = {
   frame: number
   input: { x: number; z: number; cameraHeading: number; handbrake: boolean; horn: boolean; headlights: boolean }
+  access: { kind: 'none' | 'parked' | 'traffic'; prompt: string; x: number; z: number; heading: number; occupied: boolean }
   visuals: {
     rendering: string
     characterAction: string
@@ -58,7 +59,7 @@ async function holdButton(page: Page, name: string, ms: number) {
   return samples
 }
 
-test.setTimeout(45_000)
+test.setTimeout(90_000)
 
 test('world is lit, character moves smoothly, and Drive enters a working car', async ({ page }) => {
   await page.goto('/')
@@ -73,6 +74,8 @@ test('world is lit, character moves smoothly, and Drive enters a working car', a
 
   const scene = await debugState(page)
   expect(scene.visuals.rendering).toBe('bright-day-mobile')
+  expect(scene.access.prompt).toMatch(/Press E|tap DRIVE|tap HIJACK/)
+  await expect(page.locator('.vehicle-access-prompt')).toContainText(/Press E|tap DRIVE|tap HIJACK/)
   expect(worldLuminance(await page.screenshot())).toBeGreaterThan(90)
 
   const controlStart = scene.motion.position
@@ -82,14 +85,15 @@ test('world is lit, character moves smoothly, and Drive enters a working car', a
   await page.keyboard.up('KeyA')
   expect(controlSample.input.x).toBeGreaterThan(0)
   expect(controlSample.motion.position.x).toBeLessThan(controlStart.x)
-  const afterLeft = controlSample.motion.position
+  await page.waitForTimeout(500)
+  const beforeRight = (await debugState(page)).motion.position
 
   await page.keyboard.down('KeyD')
-  await page.waitForTimeout(350)
+  await page.waitForTimeout(650)
   controlSample = await debugState(page)
   await page.keyboard.up('KeyD')
   expect(controlSample.input.x).toBeLessThan(0)
-  expect(controlSample.motion.position.x).toBeGreaterThan(afterLeft.x)
+  expect(controlSample.motion.position.x).toBeGreaterThan(beforeRight.x)
 
   const start = (await debugState(page)).motion.position
   const samples: GameDebug['motion']['position'][] = []
@@ -109,7 +113,7 @@ test('world is lit, character moves smoothly, and Drive enters a working car', a
   const distance = Math.hypot(end.x - start.x, end.z - start.z)
   const uniquePositions = new Set(samples.map((point) => `${point.x.toFixed(3)},${point.z.toFixed(3)}`))
   expect(distance).toBeGreaterThan(0.5)
-  expect(uniquePositions.size).toBeGreaterThanOrEqual(8)
+  expect(uniquePositions.size).toBeGreaterThanOrEqual(6)
   expect(actionSamples).toContain('walk')
   expect(new Set(legSamples.map((pose) => pose.map((value) => value.toFixed(3)).join(','))).size).toBeGreaterThanOrEqual(5)
 

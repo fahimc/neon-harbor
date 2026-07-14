@@ -14,6 +14,18 @@ export function collides(x: number, z: number, radius: number, obstacles: Obstac
   return obstacles.some((o) => Math.abs(x - o.x) < o.halfX + radius && Math.abs(z - o.z) < o.halfZ + radius)
 }
 
+function blocksCarMove(currentX: number, currentZ: number, nextX: number, nextZ: number, radius: number, obstacles: Obstacle[]) {
+  return obstacles.some((obstacle) => {
+    const nextCollision = collides(nextX, nextZ, radius, [obstacle])
+    if (!nextCollision) return false
+    const currentCollision = collides(currentX, currentZ, radius, [obstacle])
+    if (!currentCollision) return true
+    const currentDistance = Math.hypot(currentX - obstacle.x, currentZ - obstacle.z)
+    const nextDistance = Math.hypot(nextX - obstacle.x, nextZ - obstacle.z)
+    return nextDistance <= currentDistance
+  })
+}
+
 export function stepMotion(state: PlayerMotion, input: MoveInput, dt: number, obstacles: Obstacle[] = []): PlayerMotion {
   const safeDt = Math.min(Math.max(dt, 0), .05)
   if (state.mode === 'car') return stepCarMotion(state, input, safeDt, obstacles)
@@ -97,8 +109,8 @@ function stepCarMotion(state: PlayerMotion, input: MoveInput, safeDt: number, ob
   const radius = 1.8
   const nextX = position.x + velocity.x * safeDt
   const nextZ = position.z + velocity.z * safeDt
-  const blockedX = collides(nextX, position.z, radius, obstacles)
-  const blockedZ = collides(position.x, nextZ, radius, obstacles)
+  const blockedX = blocksCarMove(position.x, position.z, nextX, position.z, radius, obstacles)
+  const blockedZ = blocksCarMove(position.x, position.z, position.x, nextZ, radius, obstacles)
   let impact = 0
   if (!blockedX) position.x = nextX; else { impact = Math.max(impact, Math.abs(velocity.x)); velocity.x *= -.18 }
   if (!blockedZ) position.z = nextZ; else { impact = Math.max(impact, Math.abs(velocity.z)); velocity.z *= -.18 }

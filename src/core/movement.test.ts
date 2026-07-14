@@ -21,4 +21,10 @@ describe('character and vehicle controls', () => {
   it('uses left and right as steering without lateral car strafing', () => { let car = state('car'); for (let i = 0; i < 120; i++) car = stepMotion(car, { ...input, x: 1, z: 1 }, 1 / 60); const speed = Math.hypot(car.velocity.x, car.velocity.z); const sideSlip = Math.abs(car.velocity.x * Math.cos(car.heading) - car.velocity.z * Math.sin(car.heading)); expect(car.heading).toBeGreaterThan(.2); expect(speed).toBeGreaterThan(2); expect(sideSlip / speed).toBeLessThan(.18) })
   it('tracks vehicle gear, horn, lights and handbrake state', () => { const car = stepMotion(state('car'), { ...input, z: -1, handbrake: true, headlights: true, horn: true }, 1 / 60); expect(car.vehicle.gear).toBe('R'); expect(car.vehicle.handbrake).toBe(true); expect(car.vehicle.headlights).toBe(true); expect(car.vehicle.horn).toBe(true) })
   it('adds vehicle damage on hard impacts', () => { const damaged = stepMotion({ ...state('car'), velocity: { x: 0, y: 0, z: 15 } }, input, .05, [{ x: 0, z: 1, halfX: 5, halfZ: .5 }]); expect(damaged.vehicle.damage).toBeGreaterThan(0); expect(damaged.vehicle.lastImpact).toBeGreaterThan(5) })
+  it('lets cars accelerate out of an obstacle they already overlap', () => {
+    let car = { ...state('car'), position: { x: 0, y: 0, z: 0 } }
+    for (let i = 0; i < 40; i++) car = stepMotion(car, { ...input, z: 1 }, 1 / 60, [{ x: 0, z: 0, halfX: 2, halfZ: 2 }])
+    expect(car.position.z).toBeGreaterThan(.2)
+    expect(Math.hypot(car.velocity.x, car.velocity.z)).toBeGreaterThan(1)
+  })
 })
