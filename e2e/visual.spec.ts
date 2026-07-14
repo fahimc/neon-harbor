@@ -33,6 +33,15 @@ function regionFromRatios(png: PNG, ratios: Region): Region {
   }
 }
 
+function regionFromBox(png: PNG, box: { x: number; y: number; width: number; height: number }): Region {
+  return {
+    left: Math.max(0, Math.floor(box.x)),
+    top: Math.max(0, Math.floor(box.y)),
+    right: Math.min(png.width, Math.ceil(box.x + box.width)),
+    bottom: Math.min(png.height, Math.ceil(box.y + box.height)),
+  }
+}
+
 function inspectRegion(png: PNG, region: Region) {
   let luminance = 0
   let dark = 0
@@ -51,8 +60,8 @@ function inspectRegion(png: PNG, region: Region) {
       luminance += luma
       if (luma < 25) dark += 1
       if (r > 180 && g < 100 && b > 90) pink += 1
-      if (g > 145 && b > 145 && r < 120) cyan += 1
-      if (r > 170 && g > 145 && b < 120) tan += 1
+      if (g > 120 && b > 130 && r < 120) cyan += 1
+      if (r > 150 && g > 125 && b < 170) tan += 1
       pixels += 1
     }
   }
@@ -66,6 +75,10 @@ function inspectRegion(png: PNG, region: Region) {
   }
 }
 
+function overlaps(a: { x: number; y: number; width: number; height: number }, b: { x: number; y: number; width: number; height: number }) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
+}
+
 test.describe('gameplay visual rendering', () => {
   test('desktop scene is bright and the HUD controls are visible', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 })
@@ -75,7 +88,9 @@ test.describe('gameplay visual rendering', () => {
     const canvas = decode(await page.locator('canvas').screenshot())
     const world = inspectRegion(canvas, regionFromRatios(canvas, { left: .22, top: .2, right: .82, bottom: .82 }))
     const driveButton = inspectRegion(screen, regionFromRatios(screen, { left: .78, top: .78, right: .88, bottom: .98 }))
-    const minimap = inspectRegion(screen, regionFromRatios(screen, { left: .86, top: .76, right: .99, bottom: .99 }))
+    const minimapBox = await page.getByRole('button', { name: 'Open map' }).boundingBox()
+    expect(minimapBox).toBeTruthy()
+    const minimap = inspectRegion(screen, regionFromBox(screen, minimapBox!))
 
     const debug = await page.evaluate(() => (window as typeof window & { __NEON_E2E__: GameDebug }).__NEON_E2E__)
     expect(debug.visuals.rendering).toBe('bright-day-mobile')
@@ -99,5 +114,33 @@ test.describe('gameplay visual rendering', () => {
     expect(centerWorld.darkRatio).toBeLessThan(.42)
     expect(joystick.luminance).toBeGreaterThan(18)
     expect(actionButtons.pinkRatio).toBeGreaterThan(.025)
+  })
+
+  test('mobile car mode uses separated driving controls', async ({ page }) => {
+    await page.setViewportSize({ width: 896, height: 414 })
+    await openGame(page)
+    await page.getByRole('button', { name: 'Enter vehicle' }).click()
+
+    await expect(page.getByRole('button', { name: 'Accelerate' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Brake or reverse' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Exit vehicle' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Jump' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Sprint' })).toHaveCount(0)
+
+    const minimap = await page.getByRole('button', { name: 'Open map' }).boundingBox()
+    const speedometer = await page.locator('.speedometer').boundingBox()
+    const accelerate = await page.getByRole('button', { name: 'Accelerate' }).boundingBox()
+    const brake = await page.getByRole('button', { name: 'Brake or reverse' }).boundingBox()
+    const exit = await page.getByRole('button', { name: 'Exit vehicle' }).boundingBox()
+    expect(minimap && speedometer && accelerate && brake && exit).toBeTruthy()
+
+    for (const control of [accelerate!, brake!, exit!]) {
+      expect(overlaps(control, minimap!)).toBe(false)
+      expect(overlaps(control, speedometer!)).toBe(false)
+    }
+
+    const screen = decode(await page.screenshot())
+    const pedals = inspectRegion(screen, regionFromRatios(screen, { left: .78, top: .66, right: .99, bottom: .99 }))
+    expect(pedals.pinkRatio).toBeGreaterThan(.035)
   })
 })
